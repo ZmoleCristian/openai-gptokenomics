@@ -1,0 +1,121 @@
+//Project: OpenAI-GPTokenomics 
+//Description: A simple cli tool to calculate the price for request sent to OpenAI models
+//Author website: https:tragdate.ninja
+//Author: @tragDate on github tiktok and youtube
+//git repo: https://github.com/tragDate/openai-gptokenomics
+//License: GPL-3.0
+use std::fs::File;
+use std::io::{self, BufReader, Write, Read};
+use structopt::StructOpt;
+use tiktoken_rs::cl100k_base;
+use tiktoken_rs::r50k_base;
+
+#[derive(StructOpt)]
+struct Cli {
+    #[structopt(short, long, default_value = "gpt-3.5-turbo")]
+    model: String,
+    #[structopt(short = "r", long = "request_file", conflicts_with = "request_data")]
+    request_file: Option<String>,
+    #[structopt(short = "d", long = "request_data", conflicts_with = "request_file")]
+    request_data: Option<String>,
+    #[structopt(short = "a", long = "answer_file")]
+    answer_file: Option<String>,
+    #[structopt(long = "answer")]
+    answer: bool,
+    #[structopt(short, long)]
+    output_file: Option<String>,   
+}
+
+fn count_tokens(text: &str, model: &str) -> usize {
+    let bpe = if model == "gpt-4" || model == "gpt-3.5-turbo" {
+        cl100k_base().unwrap()
+    } else if model == "davinci" || model == "curie" || model == "babbage" || model == "ada" {     
+        r50k_base().unwrap()
+    } else {
+        panic!("Unsupported model: {}", model);
+    };
+
+    bpe.encode_with_special_tokens(text).len()
+}
+
+fn calculate_resp_price(num_tokens: usize, model: &str) -> f64 {
+   
+    let prices = [("gpt-4", 0.06), ("gpt-3.5-turbo", 0.002), ("davinci", 0.02), ("curie", 0.002), ("babbage", 0.0005), ("ada", 0.0004)];
+    match prices.iter().find(|(model_name, _)| model_name == &model) {
+        Some((_, price)) => (num_tokens as f64) * price / 1000.0,
+        None => panic!("Invalid model")
+    }
+    
+}
+
+fn calculate_req_price(num_tokens: usize, model: &str) -> f64 {
+
+    let prices = [("gpt-4", 0.03), ("gpt-3.5-turbo", 0.002), ("davinci", 0.02), ("curie", 0.002), ("babbage", 0.0005), ("ada", 0.0004)];
+    match prices.iter().find(|(model_name, _)| model_name == &model) {
+        Some((_, price)) => (num_tokens as f64) * price / 1000.0,
+        None => panic!("Invalid model")
+    }
+}
+
+fn main() -> io::Result<()> {
+
+    let args = Cli::from_args();
+    let model = &args.model;
+    let mut req_data = String::new();
+
+    if let Some(filename) = &args.request_file {
+        let file = File::open(filename)?;
+        let mut buf_reader = BufReader::new(file);
+        buf_reader.read_to_string(&mut req_data)?;
+    } else if let Some(data) = &args.request_data {
+        req_data.push_str(data);
+    }
+
+    let mut ans_data = String::new();
+    if args.answer || (args.answer && !ans_data.is_empty()) || args.answer_file.is_some() {
+        if let Some(filename) = &args.answer_file {
+            let file = File::open(filename)?;
+            let mut buf_reader = BufReader::new(file);
+            buf_reader.read_to_string(&mut ans_data)?;
+        }
+    }
+
+    // Read from stdin if no request data or answer data are provided.
+    if req_data.is_empty() && ans_data.is_empty() {
+        if args.answer {
+            io::stdin().read_to_string(&mut ans_data)?;
+        } else {
+            io::stdin().read_to_string(&mut req_data)?;
+        }
+    }
+
+    let req_tokens = count_tokens(&req_data, model);
+    let req_price = calculate_req_price(req_tokens, model);
+
+    let ans_price = if !ans_data.is_empty() || args.answer_file.is_some() || args.answer {
+        let ans_tokens = count_tokens(&ans_data, model);
+        calculate_resp_price(ans_tokens, model)
+    } else {
+        0.0
+    };
+
+    let total_price = req_price + ans_price;
+    let output = format!(
+        "Request price: ${:.5} for {} tokens\nAnswer price: ${:.5} for {} tokens\nTotal price: ${:.5}\n",
+        req_price, req_tokens, ans_price, count_tokens(&ans_data, model), total_price
+    );
+
+    match args.output_file {
+        Some(filename) => {
+            let mut file = File::create(filename)?;
+            file.write_all(output.as_bytes())?;
+        },
+        None => {
+            println!("{}", output);
+        },
+    }
+
+    Ok(())
+}
+
+

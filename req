@@ -1,0 +1,15 @@
+does your program meet all this requirements:
+a cli tool that calculates the price of a stirng based on the amount of tokens and the price of request / answer 
+it should have the following cappabilities
+read from stdin or file 
+it accepts a request file and a answer file flag
+it accepts a model flag 
+it can pint the result to a file or to stdout
+each model has it's own pricing / 1000 tokens
+models can have differnt ways of tokenizing 
+by default it should treat the stdin/pipe from other program as request data
+if the user speficifies the answer flag the stdin/pipe should be treated as answer data
+the user can also specify anwer file flag and then it treats the stdin/pipe data as request data
+the user can also specifi a requst file flat then it treats stdin/pipe as answer data
+if the user does not specifi -a flag it should not calculate answer data price just request data price
+if the user does not speciy any flag it should take the stdin/pipe data as request data and calculate the price for it
